@@ -1,0 +1,1020 @@
+#include "solutiondialog.h"
+#include "ui_solutiondialog.h"
+#include "3DView/dbcgns.h"
+#include "3DView/corelib.h"
+#include <QFileDialog>
+
+#include <vtk/vtkArrowSource.h>
+#include <vtk/vtkCellArray.h>
+#include <vtk/vtkGlyph2D.h>
+#include <vtk/vtkPointData.h>
+#include <vtk/vtkImageData.h>
+#include <vtk/vtkImageSliceMapper.h>
+#include <vtk/vtkImageSlice.h>
+#include <vtk/vtkInteractorStyleImage.h>
+#include <vtk/vtkPolyDataMapper.h>
+#include <vtk/vtkPolyData.h>
+#include <vtk/vtkPoints.h>
+#include <vtk/vtkRenderer.h>
+#include <vtk/vtkRenderWindow.h>
+#include <vtk/vtkRenderWindowInteractor.h>
+#include <vtk/vtkSmartPointer.h>
+#include <vtk/vtkXMLPolyDataWriter.h>
+#include <vtk/vtkVersion.h>
+#include <vtk/vtkUnstructuredGrid.h>
+#include <vtk/vtkPolyVertex.h>
+#include <vtk/vtkDataSetMapper.h>
+#include <vtk/vtkProperty.h>
+#include <vtk/vtkDoubleArray.h>
+#include <vtk/vtkPolyhedron.h>
+#include <vtk/vtkPointLocator.h>
+#include <QDebug>
+#include <vtk/vtkContourFilter.h>
+#include <vtk/vtkGaussianSplatter.h>
+#include <vtk/vtkAxes.h>
+#include <vtk/vtkTubeFilter.h>
+#include <vtk/vtkStripper.h>
+#include <vtk/vtkLookupTable.h>
+#include <vtk/vtkDelaunay3D.h>
+#include <vtk/vtkDelaunay2D.h>
+#include <vtk/vtkLabeledDataMapper.h>
+#include <vtk/vtkActor2D.h>
+#include <vtk/vtkGlyph3D.h>
+#include <vtk/vtkCleanPolyData.h>
+#include <vtk/vtkPlaneSource.h>
+#include <vtk/vtkMath.h>
+
+#include <vtk/vtkBandedPolyDataContourFilter.h>
+#include <vtk/vtkNamedColors.h>
+#include <vtk/vtkScalarBarActor.h>
+#include <vtk/vtkColorTransferFunction.h>
+#include <vtk/vtkSmoothPolyDataFilter.h>
+#include <vtk/vtkPolyDataNormals.h>
+#include <vtk/vtkTextProperty.h>
+#include <vtk/vtkStripper.h>
+#include <vtk/vtkPolyDataNormals.h>
+#include <vtk/vtkMarchingCubes.h>
+#include <vtk/vtkDecimatePro.h>
+#include <vtk/vtkVoxelModeller.h>
+#include <vtk/vtkCleanPolyData.h>
+#include <vtk/vtkReverseSense.h>
+#include <vtk/vtkHedgeHog.h>
+
+#include <vtk/vtkDataSetTriangleFilter.h>
+#include <vtk/vtkWarpScalar.h>
+#include <vtk/vtkShepardMethod.h>
+#include <vtk/vtkGeometryFilter.h>
+#include <vtk/vtkExtractVOI.h>
+#include <vtk/vtkBandedPolyDataContourFilter.h>
+#include <vtk/vtkSurfaceReconstructionFilter.h>
+#include <vtk/vtkProbeFilter.h>
+#include <vtk/vtkWindowedSincPolyDataFilter.h>
+#include <vtk/vtkStructuredGrid.h>
+#define VTK_NEW(type, instance); vtkSmartPointer<type> instance = vtkSmartPointer<type>::New();
+SolutionDialog::SolutionDialog(QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::SolutionDialog)
+{
+    ui->setupUi(this);
+    CoreDB = NULL;
+    baseindex = -1;
+    zoneindex = -1;
+    sol_x     = -1;
+    sol_y     = -1;
+    sol_z     = -1;
+    sol_index = 0;
+    cgnsIO = NULL;
+    vtkWidget = new QVTKWidget(this,QFlag(0));
+    ui->verticalLayout->addWidget(vtkWidget);
+    //ui->verticalLayout->update();
+    ren = vtkSmartPointer<vtkRenderer>::New();
+    ren->SetBackground(0.0,0.0,0.0);
+    vtkWidget->GetRenderWindow()->AddRenderer(ren);
+    //vectorActor = vtkSmartPointer<vtkActor>::New();
+}
+
+SolutionDialog::~SolutionDialog()
+{
+
+    CoreDB = NULL;
+   // ren->Delete();
+    delete cgnsIO;
+    cgnsIO = NULL;
+   delete vtkWidget;
+    delete ui;
+}
+
+void SolutionDialog::on_pushButton_toggled(bool checked)
+{
+
+
+}
+
+void SolutionDialog::on_comboBox_currentIndexChanged(int index)
+{
+
+    ui->comboBox_2->clear();
+    if(index > -1){
+         baseindex = index;
+        for(int i=0;i<CoreDB->bases[index].nzones;i++)
+        {
+            ui->comboBox_2->addItem(QString::fromLatin1(CoreDB->bases[index].zones[i].name));
+        }
+
+    }
+
+}
+
+void SolutionDialog::on_comboBox_2_currentIndexChanged(int index)
+{
+    ui->comboBox_3->clear();
+    if(index > -1){
+         zoneindex = index;
+    for(int i=0;i<CoreDB->bases[baseindex].zones[index].nsols;i++)
+    {
+        ui->comboBox_3->addItem(QString::fromLatin1(CoreDB->bases[baseindex].zones[index].sols[i].name));
+    }
+
+    }
+}
+
+
+void SolutionDialog::on_pushButton_2_toggled(bool checked)
+{
+
+}
+
+void SolutionDialog::on_pushButton_clicked()
+{
+    QString filepath = QFileDialog::getOpenFileName(this,tr("Open File"),  ".", tr("  Files (*.cgns)"));
+    if(!filepath.isEmpty()){
+//        ui->cob_z->clear();
+//        ui->cob_x->clear();
+//        ui->cob_y->clear();
+//        ui->comboBox_3->clear();
+//        ui->comboBox_2->clear();
+        ui->comboBox->clear();
+    if(cgnsIO == NULL){
+        cgnsIO = new DBCGNS;
+
+    }else{
+        CoreDB = NULL;
+        cgnsIO->Reset();
+
+    }
+
+    cgnsIO->Set_InputGrid_Filename(filepath) ;
+
+    cgnsIO->Read_DB();
+
+      CoreDB = cgnsIO->Get_DB();
+
+    int basenum = CoreDB->nbases;
+
+
+  //
+qDebug()<<QString::fromLatin1(CoreDB->bases[0].name);
+    for(int i=0;i<basenum;i++)
+    {
+        ui->comboBox->addItem(QString::fromLatin1(CoreDB->bases[i].name));
+    }
+
+    if(CoreDB->bases[0].celldim==2){
+        //the z should set unabled
+        ui->cob_z->setVisible(false);
+        ui->label_6->setVisible(false);
+    }else{
+        ui->cob_z->setVisible(true);
+        ui->label_6->setVisible(true);
+    }
+    }
+    //delete cgnsIO;
+   // cgnsIO = NULL;
+}
+//vector field
+void SolutionDialog::on_pushButton_2_clicked()
+{
+    if(ui->cob_x->currentIndex()==-1&&ui->cob_y->currentIndex()==-1&&ui->cob_z->currentIndex()==-1)
+    {
+        return;
+    }
+
+        int dim = CoreDB->bases[baseindex].celldim;
+         int coorddim = 0;
+        if(CoreDB->bases[baseindex].zones[zoneindex].type == 2){
+            coorddim = CoreDB->bases[baseindex].zones[zoneindex].dim[0]*CoreDB->bases[baseindex].zones[zoneindex].dim[1]*CoreDB->bases[baseindex].zones[zoneindex].dim[2];
+        }else
+        {
+            coorddim = CoreDB->bases[baseindex].zones[zoneindex].dim[0];
+        }
+        vtkSmartPointer<vtkPoints> points =
+                vtkSmartPointer<vtkPoints>::New();
+        vtkSmartPointer<vtkDoubleArray> pointDataArray =
+            vtkSmartPointer<vtkDoubleArray>::New();
+          pointDataArray->Initialize();
+
+        if(dim==2){
+            sol_x = ui->cob_x->currentIndex();
+            sol_y = ui->cob_y->currentIndex();
+            int count = 0;
+            if(sol_x != -1)
+                count++;
+            if(sol_y != -1)
+                count++;
+            if(count == 1){
+               if(sol_x==-1){
+                   sol_x = sol_y;
+               }
+            }
+             pointDataArray->SetNumberOfComponents(3);
+              for(int i=0;i<coorddim;i++)
+              {
+                  double x =CoreDB->bases[baseindex].zones[zoneindex].verts[i].x;
+                  double y =CoreDB->bases[baseindex].zones[zoneindex].verts[i].y;
+                  double xy[2];
+                  xy[0] = x;
+                  xy[1] = y;
+                  points->InsertNextPoint(xy);
+                  if(count == 1)
+                  {
+                     pointDataArray->InsertNextTuple3(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],0,0);
+                  }else if(count == 2)
+                  {
+                     pointDataArray->InsertNextTuple3(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_y].data[i],0);
+                  }else{
+                      return ;
+                  }
+              }
+              //set salars
+
+
+
+        }else if(dim==3)
+        {
+            sol_x = ui->cob_x->currentIndex();
+            sol_y = ui->cob_y->currentIndex();
+            sol_z = ui->cob_z->currentIndex();
+            int count = 0;
+            if(sol_x != -1)
+                count++;
+            if(sol_y != -1)
+                count++;
+            if(sol_z != -1)
+                count++;
+
+            pointDataArray->SetNumberOfComponents(3);
+            for(int i=0;i<CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].size;i++)
+            {
+                double x =CoreDB->bases[baseindex].zones[zoneindex].verts[i].x;
+                double y =CoreDB->bases[baseindex].zones[zoneindex].verts[i].y;
+                double z =CoreDB->bases[baseindex].zones[zoneindex].verts[i].z;
+              //  points->InsertNextPoint(x,y,z);
+                points->InsertPoint(i,x,y,z);
+
+                if(count == 1)
+                {
+                   // pointDataArray->InsertTuple(i);
+                   //   pointDataArray->InsertNextTuple3(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],0,0);
+                   pointDataArray->InsertNextTuple3(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],0,0);
+                }else if(count == 2)
+                {
+                   pointDataArray->InsertNextTuple3(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_y].data[i],0);
+                }else if(count == 3)
+                {
+                    pointDataArray->InsertNextTuple3(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_y].data[i],CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_z].data[i]);
+
+                }else{
+                    return ;
+                }
+            }
+
+        }
+
+       vtkSmartPointer<vtkPolyVertex> polyvertex = vtkSmartPointer<vtkPolyVertex>::New();
+        polyvertex->GetPointIds()->SetNumberOfIds(coorddim);
+        int i=0;
+        for(i=0;i<coorddim;i++)
+        {
+           polyvertex->GetPointIds()->SetId(i,i);
+        }
+        vtkSmartPointer<vtkUnstructuredGrid> grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
+
+        grid->SetPoints(points);
+        grid->InsertNextCell(polyvertex->GetCellType(),
+                  polyvertex->GetPointIds());
+
+       // grid->GetPointData()->SetScalars(pointDataArray);
+     grid->GetPointData()->SetVectors(pointDataArray);
+   double range[2];
+
+   grid->GetScalarRange(range);
+
+     VTK_NEW(vtkLookupTable,lookUpTable);
+     lookUpTable->SetRampToLinear();
+     lookUpTable->SetNumberOfColors( 256 );
+     lookUpTable->SetHueRange(0.667,0.0);
+     lookUpTable->SetRange(range);
+     lookUpTable->Build();
+   vtkSmartPointer<vtkArrowSource> arrowSource = vtkSmartPointer<vtkArrowSource>::New();
+
+   arrowSource->Update();
+   VTK_NEW(vtkScalarBarActor, colorbar);
+   colorbar->SetTitle("color");
+   vtkSmartPointer<vtkTextProperty> prop = colorbar->GetLabelTextProperty ();
+     prop->SetFontSize (4);
+   colorbar->SetTitleTextProperty(prop);
+   colorbar->SetOrientationToVertical();
+   colorbar->SetPosition(0.8,0.1);
+   colorbar->SetPosition2(0.9,0.9);
+   colorbar->SetWidth(0.2);
+   colorbar->SetNumberOfLabels(6);
+   colorbar->SetLookupTable(lookUpTable);
+     qDebug()<<range[0]<<range[1];
+
+
+     VTK_NEW(vtkPolyData,profile);
+     profile->SetPoints(points);
+     profile->GetPointData()->SetScalars(pointDataArray);
+
+
+
+
+
+
+
+   if(dim == 2){
+
+//       VTK_NEW(vtkShepardMethod,shep);
+//       shep->SetInputData(profile);
+//       shep->SetNullValue(1);
+//       //shep->SetMaximumDistance(0.08);
+//       shep->SetModelBounds(profile->GetBounds());
+//       shep->SetSampleDimensions(10,10,10);
+//       shep->Update();
+
+       vtkSmartPointer<vtkGlyph2D> glyphFilter = vtkSmartPointer<vtkGlyph2D>::New();
+       glyphFilter->SetSourceConnection(arrowSource->GetOutputPort());
+       glyphFilter->OrientOn();
+       glyphFilter->SetVectorModeToUseVector();
+      // glyphFilter->SetScaleModeToScaleByScalar();
+        //  glyphFilter->SetColorModeToColorByScalar();
+       glyphFilter->ScalingOn();
+      //glyphFilter->SetVectorModeToUseVector();
+      //glyphFilter->SetScaleModeToScaleByVector();
+       glyphFilter->SetScaleFactor(0.20);
+      // glyphFilter->SetInputConnection(shep->GetOutputPort());
+       glyphFilter->SetInputData(grid);
+      // glyphFilter->SetVectorModeToUseNormal();
+       glyphFilter->SetVectorModeToUseVector();
+
+       glyphFilter->GeneratePointIdsOn();
+       glyphFilter->SetColorModeToColorByVector();
+      // glyphFilter->SetColorModeToColorByScalar();
+       glyphFilter->Update();
+       vtkSmartPointer<vtkPolyDataMapper> vectorMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+       vectorMapper->SetInputConnection(glyphFilter->GetOutputPort());
+       vectorMapper->SetLookupTable(lookUpTable);
+       vectorMapper->SetScalarRange(range);
+       vectorMapper->SetScalarModeToUsePointData();
+        vectorMapper->SetColorModeToMapScalars();
+       vectorMapper->SetScalarVisibility(1);
+       vectorMapper->UseLookupTableScalarRangeOn();
+
+       vectorMapper->Update();
+
+       vtkSmartPointer<vtkActor> vectorActor = vtkSmartPointer<vtkActor>::New();
+       vectorActor->SetMapper(vectorMapper);
+       ren->RemoveAllViewProps();
+       ren->AddViewProp(vectorActor);
+       ren->AddActor(colorbar);
+       ren->ResetCamera();
+       vtkWidget->update();
+       ui->verticalLayout->update();
+
+   }else{
+
+//         vtkSmartPointer<vtkHedgeHog>pHedHog=vtkHedgeHog::New();
+
+//       //  pHedHog->SetInput((vtkDataObject *)pStructGrid->GetOutput());
+//pHedHog->SetInputData(grid);
+//         //设置缩放因子，控制方向线的长度
+
+//         pHedHog->SetScaleFactor(0.01);
+
+       vtkSmartPointer<vtkGlyph3D> glyphFilter = vtkSmartPointer<vtkGlyph3D>::New();
+       glyphFilter->SetSourceConnection(arrowSource->GetOutputPort());
+       glyphFilter->OrientOn();
+       glyphFilter->SetVectorModeToUseVector();
+
+      // glyphFilter->ScalingOn();
+
+       //glyphFilter->SetScaleModeToScaleByVector();
+       glyphFilter->SetScaleFactor(0.01);
+       glyphFilter->SetInputData(grid);
+       glyphFilter->SetVectorModeToUseNormal();
+       glyphFilter->SetVectorModeToUseVector();
+       glyphFilter->SetScaleModeToDataScalingOff();
+       glyphFilter->GeneratePointIdsOn();
+       glyphFilter->SetColorModeToColorByVector();
+       glyphFilter->Update();
+       vtkSmartPointer<vtkPolyDataMapper> vectorMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+       vectorMapper->SetInputConnection(glyphFilter->GetOutputPort());
+       vectorMapper->SetLookupTable(lookUpTable);
+       vectorMapper->SetScalarRange(range);
+
+       vectorMapper->SetScalarModeToUsePointData();
+        vectorMapper->SetColorModeToMapScalars();
+       vectorMapper->SetScalarVisibility(1);
+       vectorMapper->UseLookupTableScalarRangeOn();
+
+       vectorMapper->Update();
+       vtkSmartPointer<vtkActor> vectorActor = vtkSmartPointer<vtkActor>::New();
+       vectorActor->SetMapper(vectorMapper);
+       ren->RemoveAllViewProps();
+        ren->AddActor(colorbar);
+       ren->AddViewProp(vectorActor);
+       ren->ResetCamera();
+       vtkWidget->update();
+       ui->verticalLayout->update();
+   }
+
+
+
+
+
+
+
+
+
+return ;
+
+}
+//contour
+void SolutionDialog::on_pushButton_3_clicked()
+{
+
+    if(ui->cob_x->currentIndex()==-1&&ui->cob_y->currentIndex()==-1&&ui->cob_z->currentIndex()==-1)
+    {
+        return;
+    }
+    qDebug()<<ui->cob_x->currentText()<<ui->cob_y->currentText();
+
+        int dim = CoreDB->bases[baseindex].celldim;
+         int coorddim = 0;
+        if(CoreDB->bases[baseindex].zones[zoneindex].type == 2){
+            coorddim = CoreDB->bases[baseindex].zones[zoneindex].dim[0]*CoreDB->bases[baseindex].zones[zoneindex].dim[1]*CoreDB->bases[baseindex].zones[zoneindex].dim[2];
+        }else
+        {
+            coorddim = CoreDB->bases[baseindex].zones[zoneindex].dim[0];
+        }
+        vtkSmartPointer<vtkPoints> points =
+                vtkSmartPointer<vtkPoints>::New();
+        vtkSmartPointer<vtkDoubleArray> pointDataArray =
+            vtkSmartPointer<vtkDoubleArray>::New();
+          pointDataArray->Initialize();
+
+        if(dim==2){
+            sol_x = ui->cob_x->currentIndex();
+            sol_y = ui->cob_y->currentIndex();
+            int count = 0;
+            if(sol_x != -1)
+                count++;
+            if(sol_y != -1)
+                count++;
+            if(count == 1){
+               if(sol_x==-1){
+                   sol_x = sol_y;
+               }
+            }
+             pointDataArray->SetNumberOfComponents(count);
+              for(int i=0;i<coorddim;i++)
+              {
+                  double x =CoreDB->bases[baseindex].zones[zoneindex].verts[i].x;
+                  double y =CoreDB->bases[baseindex].zones[zoneindex].verts[i].y;
+                  double xy[3];
+                  xy[0] = x;
+                  xy[1] = y;
+                  xy[2] = 0.0;
+                 // points->InsertNextPoint(xy);
+                   points->InsertPoint(i,x,y,0);
+                  if(count == 1)
+                  {
+                       pointDataArray->InsertValue(i,CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i]);
+                    // pointDataArray->InsertNextValue(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i]);
+                  }else if(count == 2)
+                  {
+                     pointDataArray->InsertNextTuple2(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_y].data[i]);
+                  }else{
+                      return ;
+                  }
+              }
+              //set salars
+
+
+
+        }else if(dim==3)
+        {
+            sol_x = ui->cob_x->currentIndex();
+            sol_y = ui->cob_y->currentIndex();
+            sol_z = ui->cob_z->currentIndex();
+            int count = 0;
+            if(sol_x != -1)
+                count++;
+            if(sol_y != -1)
+                count++;
+            if(sol_z != -1)
+                count++;
+             points->SetNumberOfPoints(coorddim);
+             pointDataArray->SetNumberOfComponents(count);
+            for(int i=0;i<CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].size;i++)
+            {
+                double x =CoreDB->bases[baseindex].zones[zoneindex].verts[i].x;
+                double y =CoreDB->bases[baseindex].zones[zoneindex].verts[i].y;
+                double z =CoreDB->bases[baseindex].zones[zoneindex].verts[i].z;
+               // points->InsertNextPoint(i,x,y,z);
+                points->InsertPoint(i,x,y,z);
+                if(count == 1)
+                {
+                    pointDataArray->InsertValue(i,CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i]);
+                 //   qDebug()<<CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i];
+                 //  pointDataArray->InsertNextValue(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i]);
+                }else if(count == 2)
+                {
+                   pointDataArray->InsertNextTuple2(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_y].data[i]);
+                }else if(count == 3)
+                {
+                    pointDataArray->InsertNextTuple3(CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_x].data[i],CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_y].data[i],CoreDB->bases[baseindex].zones[zoneindex].sols[sol_index].flds[sol_z].data[i]);
+
+                }else{
+                    return ;
+                }
+            }
+
+
+        }
+
+       vtkSmartPointer<vtkPolyVertex> polyvertex = vtkSmartPointer<vtkPolyVertex>::New();
+        polyvertex->GetPointIds()->SetNumberOfIds(coorddim);
+        int i=0;
+        for(i=0;i<coorddim;i++)
+        {
+           polyvertex->GetPointIds()->SetId(i,i);
+        }
+        vtkSmartPointer<vtkUnstructuredGrid> grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
+
+        grid->SetPoints(points);
+        grid->InsertNextCell(polyvertex->GetCellType(),
+                  polyvertex->GetPointIds());
+
+       grid->GetPointData()->SetScalars(pointDataArray);
+       VTK_NEW(vtkPolyData,profile);
+       profile->SetPoints(points);
+       profile->GetPointData()->SetScalars(pointDataArray);
+     if(dim==2){
+
+         VTK_NEW(vtkShepardMethod,shep);
+         shep->SetInputData(profile);
+         //shep->SetNullValue(1);
+         shep->SetMaximumDistance(0.01);
+         shep->SetModelBounds(profile->GetBounds());
+         shep->SetSampleDimensions(10,10,10);
+         shep->Update();
+          double range[2];
+         grid->GetScalarRange(range);
+//          qDebug()<<range[0]<<range[1]<<range[1]-range[0];
+          vtkGaussianSplatter *popSplatter = vtkGaussianSplatter::New();
+             popSplatter->SetInputData(grid);
+             popSplatter->SetSampleDimensions(50,50,50);
+             popSplatter->SetRadius(0.02);
+             popSplatter->SetScaleFactor(50);
+              popSplatter->ScalarWarpingOff();
+            // popSplatter->SetModelBounds(grid->GetBounds());
+            // popSplatter->ScalarWarpingOn();
+            // popSplatter->NormalWarpingOn();
+
+            popSplatter->Update();
+
+//            VTK_NEW(vtkDataSetTriangleFilter,dst);
+//            dst->SetInputData(grid);
+
+
+
+
+
+
+
+
+
+            vtkSmartPointer<vtkDelaunay2D> delaunay
+                       = vtkSmartPointer<vtkDelaunay2D>::New();
+             delaunay->SetTolerance(0.01);
+             delaunay->SetInputData(grid);
+             delaunay->Update();
+
+
+
+
+
+             //做简化，创建一个 vtkDecimatePro 对象
+             vtkDecimatePro *deciFilter = vtkDecimatePro::New();
+             //设置输入
+             deciFilter->SetInputConnection(delaunay->GetOutputPort());
+             //简化为原来的 10%
+             deciFilter->SetTargetReduction(0.1);
+             //保持原始网格拓扑结构
+             deciFilter->PreserveTopologyOn();
+             //做简化，创建一个 vtkQuadricDecimation 对象
+//             vtkQuadricDecimation*deci = vtkQuadricDecimation::New();
+//             //设置输入
+//             deci->SetInputConnection(tri->GetOutputPort());
+//             //简化为原来的 75%
+//             deci->SetTargetReduction( 0.75 );
+
+
+
+
+
+
+           vtkSmartPointer<vtkContourFilter> popSurface =
+           vtkSmartPointer<vtkContourFilter>::New();
+          // popSurface->SetInputConnection(deciFilter->GetOutputPort());
+popSurface->SetInputData(deciFilter->GetOutput());
+
+           vtkSmartPointer<vtkLookupTable> lut = vtkSmartPointer<vtkLookupTable>::New();
+
+           lut->SetRampToLinear();
+           lut->SetNumberOfColors( 6 );
+           lut->SetHueRange(0.667,0.0);
+           lut->SetRange(range);
+           lut->Build();
+           popSurface->GenerateValues(5,  range[0],  range[1]);
+           popSurface->Update();
+
+qDebug()<<popSurface->GetValue(3);
+
+           VTK_NEW(vtkGeometryFilter,gf);
+            gf->SetInputConnection(popSurface->GetOutputPort());
+           vtkSmartPointer<vtkPolyDataMapper> vectorMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+           vectorMapper->SetInputConnection(gf->GetOutputPort());
+
+           vectorMapper->SetScalarRange(range);
+            vectorMapper->SetLookupTable(lut);
+
+           vectorMapper->SetScalarVisibility(1);
+           vectorMapper->UseLookupTableScalarRangeOn();
+           vectorMapper->SetColorModeToMapScalars();
+          // vectorMapper->ScalarVisibilityOff();
+           vectorMapper->Update();
+
+
+           VTK_NEW(vtkScalarBarActor, colorbar);
+           colorbar->SetTitle("color");
+           vtkSmartPointer<vtkTextProperty> prop = colorbar->GetLabelTextProperty ();
+           prop->SetFontSize (4);
+           colorbar->SetTitleTextProperty(prop);
+           colorbar->SetOrientationToVertical();
+           colorbar->SetPosition(0.8,0.1);
+           colorbar->SetPosition2(0.9,0.9);
+           colorbar->SetWidth(0.2);
+           colorbar->SetNumberOfLabels(6);
+           colorbar->SetLookupTable(lut);
+
+           vtkSmartPointer<vtkActor> vectorActor = vtkSmartPointer<vtkActor>::New();
+           vectorActor->SetMapper(vectorMapper);
+
+
+
+           ren->RemoveAllViewProps();
+           ren->AddViewProp(vectorActor);
+           ren->AddActor(colorbar);
+         // ren->AddActor(cubeActor);
+         // ren->AddActor(actor);
+           ren->ResetCamera();
+           vtkWidget->update();
+           ui->verticalLayout->update();
+
+
+//         vtkSmartPointer<vtkDelaunay2D> delaunay
+//             = vtkSmartPointer<vtkDelaunay2D>::New();
+//          delaunay->SetTolerance(0.00000001);
+//          delaunay->SetInputData(grid);
+//delaunay->SetAlpha(100);
+//          delaunay->Update();
+//          double range[2];
+//          grid->GetScalarRange(range);
+//          qDebug()<<range[0]<<range[1];
+//          vtkSmartPointer<vtkLookupTable> lut = vtkSmartPointer<vtkLookupTable>::New();
+//          lut->SetRampToLinear();
+//          lut->SetNumberOfColors( 256 );
+//          lut->SetHueRange(0.667,0.0);
+//          lut->SetRange(range);
+//          lut->Build();
+////              VTK_NEW(vtkDecimatePro, decimateFilter);
+////              decimateFilter->SetInputConnection(delaunay->GetOutputPort());
+////              decimateFilter->SetTargetReduction(0.1);
+////              decimateFilter->SetPreserveTopology(1);
+
+////                   VTK_NEW(vtkSmoothPolyDataFilter, smoothFilter);
+////                      smoothFilter->SetInputConnection(decimateFilter->GetOutputPort());
+////                      smoothFilter->SetNumberOfIterations(100);
+
+////                      //Produces smoother normals for the surface
+////                      VTK_NEW(vtkPolyDataNormals, normalsFilter);
+////                      normalsFilter->SetInputConnection(smoothFilter->GetOutputPort());
+////                      normalsFilter->ComputeCellNormalsOn();
+////                      normalsFilter->SetFeatureAngle(60);
+
+
+
+
+
+
+//         vtkSmartPointer<vtkContourFilter> popSurface =
+//           vtkSmartPointer<vtkContourFilter>::New();
+//          popSurface->SetInputConnection(delaunay->GetOutputPort());
+
+//           popSurface->GenerateValues(5, .99*range[0], .99*range[1]);
+
+//           popSurface->ComputeScalarsOn();
+//           popSurface->ComputeGradientsOff();
+
+
+//           vtkPolyDataNormals *skinNormals = vtkPolyDataNormals::New();
+//               skinNormals->SetInputConnection(popSurface->GetOutputPort());
+//               skinNormals->SetFeatureAngle(60.0);
+//               vtkStripper *skinStripper = vtkStripper::New();
+//               skinStripper->SetInputConnection(skinNormals->GetOutputPort());
+
+
+////               vtkSmartPointer<vtkCleanPolyData> filledContours =
+////                   vtkSmartPointer<vtkCleanPolyData>::New();
+////                filledContours->SetInputConnection(popSurface->GetOutputPort());
+
+////                vtkSmartPointer<vtkPolyDataMapper> contourMapper =
+////                   vtkSmartPointer<vtkPolyDataMapper>::New();
+////               //  contourMapper->SetInputConnection(filledContours->GetOutputPort());
+////                 contourMapper->SetInputConnection(normalsFilter->GetOutputPort());
+////                 contourMapper->SetScalarRange(range[0], range[1]);
+
+
+////                  contourMapper->Update();
+
+
+////                 vtkSmartPointer<vtkActor> contourActor =
+////                    vtkSmartPointer<vtkActor>::New();
+////                  contourActor->SetMapper(contourMapper);
+////                  contourActor->GetProperty()->SetInterpolationToFlat();
+
+
+
+
+
+//           vtkSmartPointer<vtkPolyDataMapper> vectorMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+//           vectorMapper->SetInputConnection(skinStripper->GetOutputPort());
+
+//           vectorMapper->SetScalarRange(range);
+//            vectorMapper->SetLookupTable(lut);
+
+//           vectorMapper->SetScalarVisibility(1);
+//           vectorMapper->UseLookupTableScalarRangeOn();
+//           vectorMapper->SetColorModeToMapScalars();
+//           vectorMapper->Update();
+//           vtkSmartPointer<vtkActor> vectorActor = vtkSmartPointer<vtkActor>::New();
+//           vectorActor->SetMapper(vectorMapper);
+//           vectorActor->GetProperty()->SetInterpolationToFlat();
+
+
+
+//           VTK_NEW(vtkScalarBarActor, colorbar);
+//           colorbar->SetTitle("color");
+//           vtkSmartPointer<vtkTextProperty> prop = colorbar->GetLabelTextProperty ();
+//             prop->SetFontSize (8);
+//           colorbar->SetTitleTextProperty(prop);
+//                   colorbar->SetOrientationToVertical();
+//                   colorbar->SetPosition(0.8,0.1);
+//                   colorbar->SetPosition2(0.9,0.9);
+//                   colorbar->SetWidth(0.2);
+//                   colorbar->SetNumberOfLabels(6);
+//                   colorbar->SetLookupTable(lut);
+
+
+//           ren->RemoveAllViewProps();
+//           ren->AddViewProp(vectorActor);
+//           //ren->AddViewProp(contourActor);
+//           ren->AddActor2D(colorbar);
+//           //ren->AddViewProp(colorbar);
+//           ren->ResetCamera();
+//           vtkWidget->update();
+//           ui->verticalLayout->update();
+     }else if(dim == 3)
+     {
+//         qDebug()<<ui->cob_x->currentText()<<ui->cob_y->currentText()<<ui->cob_z->currentText();
+
+//         VTK_NEW(vtkCleanPolyData, cleanPolyData);
+//                 //cleanPolyData.SetInputConnection(inputCloud.getPolyData().GetProducerPort());
+//         cleanPolyData->SetInputData(grid);
+//         cleanPolyData->Update();
+         vtkSmartPointer<vtkDelaunay2D> delaunay
+             = vtkSmartPointer<vtkDelaunay2D>::New();
+
+          delaunay->SetTolerance(0.01);
+          delaunay->SetInputData(grid);
+//delaunay->SetInputConnection(cleanPolyData->GetOutputPort());
+         // delaunay->SetAlpha(100);
+          delaunay->Update();
+
+
+
+         double range[2];
+         grid->GetScalarRange(range);
+//qDebug()<<range[0]<<range[1];
+//         vtkSmartPointer<vtkStructuredGrid> structuredGrid =
+//            vtkSmartPointer<vtkStructuredGrid>::New();
+//          // Specify the dimensions of the grid
+//          structuredGrid->SetDimensions(coorddim,coorddim,coorddim);
+//          structuredGrid->SetPoints(points);
+//          vtkSmartPointer<vtkDataSetMapper> mapper =
+//             vtkSmartPointer<vtkDataSetMapper>::New();
+//         #if VTK_MAJOR_VERSION <= 5
+//           mapper->SetInputConnection(structuredGrid->GetProducerPort());
+//         #else
+//           mapper->SetInputData(structuredGrid);
+//         #endif
+
+//           vtkSmartPointer<vtkActor> actor =
+//             vtkSmartPointer<vtkActor>::New();
+//           actor->SetMapper(mapper);
+
+//VTK_NEW(vtkShepardMethod,shep);
+//shep->SetInputData(profile);
+//shep->SetNullValue(range[0]);
+//shep->SetMaximumDistance(1);
+//shep->SetModelBounds(profile->GetBounds());
+//shep->SetSampleDimensions(50,50,20);
+//shep->Update();
+
+//VTK_NEW(vtkExtractVOI,voi);
+//voi->SetInputConnection(shep->GetOutputPort());
+//voi->SetVOI(0,9,0,9,0,9);
+////voi->SetSampleRate(2,2,2);
+//voi->Update();
+
+
+
+
+          qDebug()<<range[0]<<range[1]<<range[1]-range[0];
+//          vtkGaussianSplatter *popSplatter = vtkGaussianSplatter::New();
+//             popSplatter->SetInputData(grid);
+//             popSplatter->SetSampleDimensions(10,10,10);
+//             popSplatter->SetRadius(0.1);
+//             popSplatter->SetScaleFactor(100);
+//             popSplatter->SetModelBounds(grid->GetBounds());
+//             popSplatter->ScalarWarpingOff();
+//             popSplatter->NormalWarpingOn();
+//             popSplatter->SetExponentFactor(-1);
+//             popSplatter->Update();
+
+//             VTK_NEW(vtkGeometryFilter,gf);
+//              gf->SetInputConnection(shep->GetOutputPort());
+//             VTK_NEW(vtkWarpScalar,ws);
+//              ws->SetInputConnection(shep->GetOutputPort());
+//           vtkSmartPointer<vtkContourFilter> popSurface =
+//           vtkSmartPointer<vtkContourFilter>::New();
+
+//           popSurface->SetInputConnection(popSplatter->GetOutputPort());
+
+           vtkSmartPointer<vtkLookupTable> lut = vtkSmartPointer<vtkLookupTable>::New();
+
+           lut->SetRampToLinear();
+           lut->SetNumberOfColors( 6 );
+           lut->SetHueRange(0.667,0.0);
+           lut->SetRange(range);
+           lut->Build();
+
+//           popSurface->GenerateValues(12, range[0], range[1]);
+//                      popSurface->ComputeScalarsOn();
+//                      popSurface->ComputeGradientsOff();
+//           popSurface->Update();
+
+
+
+
+//           vtkSmartPointer<vtkReverseSense> reverse = vtkSmartPointer<vtkReverseSense>::New();
+//           reverse->SetInputConnection(popSurface->GetOutputPort());
+//           reverse->ReverseCellsOn();
+//           reverse->ReverseNormalsOn();
+//           reverse->Update();
+
+
+vtkSmartPointer<vtkContourFilter> popSurface2 =
+vtkSmartPointer<vtkContourFilter>::New();
+ popSurface2->SetInputConnection(delaunay->GetOutputPort());
+//popSurface2->SetInputData(shep->GetOutput());
+popSurface2->GenerateValues(12, range[0], range[1]);
+popSurface2->Update();
+
+//vtkPolyDataNormals *skinNormals = vtkPolyDataNormals::New();
+//    skinNormals->SetInputConnection(popSurface2->GetOutputPort());
+//    skinNormals->SetFeatureAngle(60.0);
+//    vtkStripper *skinStripper = vtkStripper::New();
+//    skinStripper->SetInputConnection(skinNormals->GetOutputPort());
+
+vtkSmartPointer<vtkPolyDataMapper> vectorMapper2 = vtkSmartPointer<vtkPolyDataMapper>::New();
+vectorMapper2->SetInputConnection(popSurface2->GetOutputPort());
+
+vectorMapper2->SetScalarRange(range);
+ vectorMapper2->SetLookupTable(lut);
+
+vectorMapper2->SetScalarVisibility(1);
+vectorMapper2->UseLookupTableScalarRangeOn();
+vectorMapper2->SetColorModeToMapScalars();
+vectorMapper2->Update();
+vtkSmartPointer<vtkActor> vectorActor2 = vtkSmartPointer<vtkActor>::New();
+vectorActor2->SetMapper(vectorMapper2);
+
+//           vtkSmartPointer<vtkPolyDataMapper> vectorMapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+//           vectorMapper->SetInputConnection(popSurface2->GetOutputPort());
+
+//           vectorMapper->SetScalarRange(range);
+//            vectorMapper->SetLookupTable(lut);
+
+//           vectorMapper->SetScalarVisibility(1);
+//           vectorMapper->UseLookupTableScalarRangeOn();
+//           vectorMapper->SetColorModeToMapScalars();
+//           vectorMapper->Update();
+
+
+           VTK_NEW(vtkScalarBarActor, colorbar);
+           colorbar->SetTitle("color");
+           vtkSmartPointer<vtkTextProperty> prop = colorbar->GetLabelTextProperty ();
+           prop->SetFontSize (4);
+           colorbar->SetTitleTextProperty(prop);
+           colorbar->SetOrientationToVertical();
+           colorbar->SetPosition(0.8,0.1);
+           colorbar->SetPosition2(0.9,0.9);
+           colorbar->SetWidth(0.2);
+           colorbar->SetNumberOfLabels(6);
+           colorbar->SetLookupTable(lut);
+
+          // vtkSmartPointer<vtkActor> vectorActor = vtkSmartPointer<vtkActor>::New();
+          // vectorActor->SetMapper(vectorMapper);
+
+           /*
+            // See which isocontours are being generated
+            double values[10];
+            bf->GetValues(values);
+            for(unsigned int i = 0; i < 10; i++)
+              {
+              cout << values[i] << " ";
+              }
+            cout << endl;
+            */
+
+           ren->RemoveAllViewProps();
+
+            ren->AddActor(colorbar);
+
+            ren->AddActor(vectorActor2);
+           ren->ResetCamera();
+           vtkWidget->update();
+           ui->verticalLayout->update();
+
+     }
+
+
+
+return ;
+
+}
+
+void SolutionDialog::on_pushButton_4_clicked()
+{
+
+
+
+}
+
+void SolutionDialog::on_comboBox_3_currentIndexChanged(int index)
+{
+
+    //filled the flds by sols
+    qDebug()<<"flds";
+    ui->cob_x->clear();
+    ui->cob_y->clear();
+    ui->cob_z->clear();
+    if(index > -1){
+        sol_index = index;
+    int nflds = CoreDB->bases[baseindex].zones[zoneindex].sols[index].nflds;
+    for(int i = 0; i < nflds; i++)
+    {
+
+        ui->cob_x->addItem(QString::fromLatin1(CoreDB->bases[baseindex].zones[zoneindex].sols[index].flds[i].name));
+        ui->cob_y->addItem(QString::fromLatin1(CoreDB->bases[baseindex].zones[zoneindex].sols[index].flds[i].name));
+        ui->cob_z->addItem(QString::fromLatin1(CoreDB->bases[baseindex].zones[zoneindex].sols[index].flds[i].name));
+    }
+    ui->cob_x->setCurrentIndex(-1);
+    ui->cob_y->setCurrentIndex(-1);
+    ui->cob_z->setCurrentIndex(-1);
+
+    }
+}
